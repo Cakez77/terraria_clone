@@ -1,0 +1,5 @@
+examples
+*.exe
+*.pdb
+.vs
+.build
