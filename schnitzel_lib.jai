@@ -102,6 +102,13 @@ perlin_noise :: (x : float, y : float) -> float
     return value; 
 }
 
+point_in_rect :: (point : Vector2, rect : Rect) -> bool
+{
+  return point.x >= rect.x &&
+         point.x <= rect.x + rect.w &&
+         point.y >= rect.y &&
+         point.y <= rect.y + rect.h;
+}
 
 // #############################################################################
 //                           Actual Perlin Noise?

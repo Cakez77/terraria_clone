@@ -1,8 +1,10 @@
 #version 430
 
-
 // Output
 layout (location = 0) out vec2 textureCoordsOut;
+
+#define BIT(x) x << 1
+#define RENDER_OPTION_FLIP_X BIT(0)
 
 struct Transform
 {
@@ -10,6 +12,9 @@ struct Transform
   vec2 size;
   vec2 atlasOffset;
   vec2 spriteSize;
+  vec2 pivotPoint;
+  float angle;
+  int renderOptions;
 };
 
 // Input Buffers
@@ -39,10 +44,28 @@ void main()
     transform.pos + transform.size                        // Bottom Right
   };
 
+  // Rotation
+  {
+    float angle = transform.angle;
+    vec2 offset = transform.pos + transform.size / 2.0 + transform.pivotPoint;
+    
+    for (int i = 0; i < 6; i++)
+    {
+      float newX = (vertices[i].x - offset.x) * cos(angle) - 
+      (vertices[i].y - offset.y) * sin(angle);
+      
+      float newY = (vertices[i].x - offset.x) * sin(angle) + 
+      (vertices[i].y - offset.y) * cos(angle);
+      
+      vertices[i].xy = vec2(newX + offset.x, newY + offset.y);
+    }
+  }
+
   float left = transform.atlasOffset.x;
   float top = transform.atlasOffset.y;
   float right = transform.atlasOffset.x + transform.spriteSize.x;
   float bottom = transform.atlasOffset.y + transform.spriteSize.y;
+
   vec2 textureCoords[6] =
   {
     vec2(left,  top),

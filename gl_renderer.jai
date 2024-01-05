@@ -7,22 +7,75 @@ Transform :: struct
   size : Vector2 = .{0, 0};
   atlasOffset : Vector2 = .{0, 0};
   spriteSize : Vector2 = .{0, 0};
+  pivotPoint : Vector2 = .{0, 0};
+  angle : float = 0.0;
+  padding : float;
 };
 
+Camera2D :: struct
+{
+  zoom : float;
+  dimensions : Vector2;
+  position : Vector2;
+};
+
+DrawData :: struct
+{
+  angle : float;
+  pivotPoint : Vector2;
+  renderOptions : int;
+};
+
+// #############################################################################
+//                           Render Interface Globals
+// #############################################################################
 MAX_TRANSFORMS :: 5000;
 transforms : [..] Transform;
+gameCamera : Camera2D;
+
+// #############################################################################
+//                           Render Interface Utility
+// #############################################################################
+mouse_pos_world :: () -> Vector2
+{
+  x, y, success := get_mouse_pointer_position();
+  screenPos : Vector2 = .{xx x, xx y};
+
+  // Offset using dimensions and position
+  xPos : float = screenPos.x / screenSize.x * gameCamera.dimensions.x; // [0; dimensions.x]
+  xPos += -gameCamera.dimensions.x / 2.0 + gameCamera.position.x;
+
+  // Offset using dimensions and position
+  yPos : float = screenPos.y / screenSize.y * gameCamera.dimensions.y; // [0; dimensions.y]
+  yPos += -gameCamera.dimensions.y / 2.0 - gameCamera.position.y;
+
+  return .{xPos, yPos};
+}
 
 // #############################################################################
 //                           Render Interface Functions
 // #############################################################################
 draw_quad :: (transform : *Transform)
 {
+  // GameCamera Rect
+  rect : Rect = .{
+    gameCamera.position.x - gameCamera.dimensions.x / 2 - 10,
+    -gameCamera.position.y - gameCamera.dimensions.y / 2 - 10,
+    gameCamera.dimensions.x + 20,
+    gameCamera.dimensions.y + 20,
+  };
+
+  if !point_in_rect(transform.pos, rect)
+    return;
+
   // Center Quad
   transform.pos -= transform.size / 2;
+
+
   array_add(*transforms, transform);
 }
 
-draw_quad :: (pos : Vector2, size : Vector2)
+draw_quad :: (pos : Vector2, size : Vector2, drawData : DrawData = .{})
 {
   white := get_sprite(.WHITE);
 
@@ -31,11 +84,13 @@ draw_quad :: (pos : Vector2, size : Vector2)
   transform.size = size;
   transform.atlasOffset = white.atlasOffset;
   transform.spriteSize = white.size;
+  transform.angle = drawData.angle;
+  transform.pivotPoint = drawData.pivotPoint;
 
   draw_quad(*transform);
 }
 
-draw_sprite ::(spriteID : SpriteID, pos : Vector2)
+draw_sprite :: (spriteID : SpriteID, pos : Vector2, drawData : DrawData = .{})
 {
   sprite := get_sprite(spriteID);
 
@@ -44,15 +99,17 @@ draw_sprite ::(spriteID : SpriteID, pos : Vector2)
   transform.size = sprite.size;
   transform.atlasOffset = sprite.atlasOffset;
   transform.spriteSize = sprite.size;
+  transform.angle = drawData.angle;
+  transform.pivotPoint = drawData.pivotPoint;
 
   draw_quad(*transform);
 }
-
 
 // #############################################################################
 //                           OpenGL Stuff
 // #############################################################################
 transformSBOID : GLuint = 0;
+projectionID : GLint = 0;
 
 gl_create_shader :: (shaderType : GLuint, shaderPath : string) -> GLuint
 {
@@ -134,19 +191,31 @@ gl_init :: () -> bool
   glEnable(GL_DEPTH_TEST);
   glDepthFunc(GL_GREATER);
 
-  orthoProjection = orthographic_projection(0.0, 480, -270, 0);
-  projectionID := glGetUniformLocation(programID, "orthoProjection");
-  glUniformMatrix4fv(projectionID, 1, GL_FALSE, *orthoProjection._11);
+  // sRGB output (even if input texture is non-sRGB -> don't rely on texture used)
+  // Your font is not using sRGB, for example (not that it matters there, because no actual color is sampled from it)
+  // But this could prevent some future bug when you start mixing different types of textures
+  // Of course, you still need to correctly set the image file source format when using glTexImage2D()
+  // glEnable(GL_FRAMEBUFFER_SRGB);
+  glDisable(GL_MULTISAMPLE); // disable multisampling
+
+  projectionID = glGetUniformLocation(programID, "orthoProjection");
 
   return true;
 }
 
 gl_render :: ()
 {
-  glClearColor(119.0 / 255.0, 33.0 / 255.0, 111.0 / 255.0, 1.0);
+  orthoProjection = orthographic_projection(
+    gameCamera.position.x - gameCamera.dimensions.x / 2.0, 
+    gameCamera.position.x + gameCamera.dimensions.x / 2.0, 
+    gameCamera.position.y - gameCamera.dimensions.y / 2.0, 
+    gameCamera.position.y + gameCamera.dimensions.y / 2.0);
+  glUniformMatrix4fv(projectionID, 1, GL_FALSE, *orthoProjection._11);
+
+  glClearColor(79.0 / 255.0, 140.0 / 255.0, 235.0 / 255.0, 1.0);
   glClearDepth(0.0);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-  glViewport(0, 0, xx width, xx height);
+  glViewport(0, 0, xx screenSize.x, xx screenSize.y);
 
   // Copy transforms to the GPU
   assert(transforms.count < MAX_TRANSFORMS, "Reached Maximum Transforms");
